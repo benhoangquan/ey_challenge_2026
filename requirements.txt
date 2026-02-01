@@ -16,6 +16,8 @@ tqdm==4.66.5
 
 requests>=2.28.0
 
+earthengine-api>=1.7.0
+
 pandas==2.3.0
 
 xarray==2025.3.1
