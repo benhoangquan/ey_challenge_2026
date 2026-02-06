@@ -5,7 +5,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestRegressor
 import xgboost as xgb
-from sklearn.model_selection import train_test_split, KFold
+from sklearn.model_selection import train_test_split, KFold, learning_curve
 from sklearn.decomposition import PCA
 from sklearn.metrics import r2_score, mean_squared_error
 import numpy as np
@@ -56,7 +56,7 @@ def _make_pipeline(kind='full'):
     if kind == 'full':
         steps.extend([
             ('pca', PCA(n_components=0.95)),
-            ('xgb', xgb.XGBRegressor(n_estimators=100, learning_rate=0.1, max_depth=6, tree_method='hist')),
+            ('xgb', xgb.XGBRegressor(n_estimators=1000, learning_rate=0.1, max_depth=6, tree_method='hist')),
         ])
     else:
         steps.append(('model', RandomForestRegressor(n_estimators=100, random_state=42)))
@@ -64,9 +64,70 @@ def _make_pipeline(kind='full'):
 
 
 def train_model(X_train, y_train):
-    """Full pipeline: imputer → scaler → PCA → XGBoost. Fitted only on X_train (no leakage)."""
-    model_pipeline = _make_pipeline('full')
+    """Full pipeline: imputer → scaler → PCA → XGBoost. Fitted only on X_train (no leakage).
+    Traces learning curve during training using wandb."""
+    # Split training data for validation tracking
+    X_tr, X_val, y_tr, y_val = train_test_split(
+        X_train, y_train, test_size=0.2, random_state=42
+    )
+    
+    # Create pipeline steps up to XGBoost
+    imputer = SimpleImputer(strategy='median')
+    scaler = StandardScaler()
+    pca = PCA(n_components=0.95)
+    
+    # Fit preprocessing steps
+    X_tr_imputed = imputer.fit_transform(X_tr)
+    X_tr_scaled = scaler.fit_transform(X_tr_imputed)
+    X_tr_pca = pca.fit_transform(X_tr_scaled)
+    
+    # Transform validation set
+    X_val_imputed = imputer.transform(X_val)
+    X_val_scaled = scaler.transform(X_val_imputed)
+    X_val_pca = pca.transform(X_val_scaled)
+    
+    # Create XGBoost model
+    xgb_model = xgb.XGBRegressor(
+        n_estimators=1000, 
+        learning_rate=0.1, 
+        max_depth=6, 
+        tree_method='hist'
+    )
+    
+    # Store evaluation results for learning curve tracking
+    evals_result = {}
+    
+    # Fit XGBoost with evaluation set (use default eval metric for the objective)
+    xgb_model.fit(
+        X_tr_pca, y_tr,
+        eval_set=[(X_tr_pca, y_tr), (X_val_pca, y_val)],
+        verbose=False
+    )
+    
+    # Log learning curve to wandb from evaluation results
+    if wandb.run is not None and hasattr(xgb_model, 'evals_result_'):
+        evals_result = xgb_model.evals_result_
+        # evals_result structure: {'validation_0': {'rmse': [...]}, 'validation_1': {'rmse': [...]}}
+        eval_names = list(evals_result.keys())
+        for dataset_idx, dataset_name in enumerate(eval_names):
+            dataset_label = "train" if dataset_idx == 0 else "val"
+            for metric_name, values in evals_result[dataset_name].items():
+                # Log each iteration's metric value
+                for iteration, value in enumerate(values):
+                    metric_key = f"learning_curve/{dataset_label}_{metric_name}"
+                    wandb.log({metric_key: value}, step=iteration)
+    
+    # Reconstruct full pipeline
+    model_pipeline = Pipeline([
+        ('imputer', imputer),
+        ('scaler', scaler),
+        ('pca', pca),
+        ('xgb', xgb_model)
+    ])
+    
+    # Fit on full training set for final model
     model_pipeline.fit(X_train, y_train)
+
     return model_pipeline
 
 

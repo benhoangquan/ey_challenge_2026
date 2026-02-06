@@ -12,9 +12,7 @@
 import pandas as pd
 import wandb
 
-# %%
-%load_ext autoreload
-%autoreload 2
+
 
 # %% [markdown]
 # ## Load data
