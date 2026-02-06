@@ -1,14 +1,16 @@
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, SimpleImputer
 from sklearn.pipeline import Pipeline
 import xgboost as xgb
 from sklearn.model_selection import train_test_split
 from sklearn.decomposition import PCA
 from sklearn.metrics import r2_score
 from sklearn.metrics import mean_squared_error
+import numpy as np
+import matplotlib as plt
 
 
-def combine_two_datasets(*datasets):
+def combine_two_datasets(*datasets, keys):
     '''
     Returns a  vertically concatenated dataset.
     Attributes:
@@ -16,9 +18,24 @@ def combine_two_datasets(*datasets):
     dataset2 - Dataset 2 to be combined
     '''
     
-    data = pd.concat(datasets, axis=1)
+    data = pd.merge(datasets, on=keys)
     data = data.loc[:, ~data.columns.duplicated()]
     return data
+
+def analyze_feature_correlation(X: pd.DataFrame, y: pd.DataFrame): 
+    df = pd.merge(X, y)
+    corr_df = df.corr()[y].drop(y).sort_values(key=abs, ascending=True)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    colors = ['#e74c3c' if x < 0 else '#2ecc71' for x in corr_df.values]
+    bars = ax.barh(corr_df.index, corr_df.values, color=colors, edgecolor='white', linewidth=0.7)
+    ax.axvline(x=0, color='black', linewidth=0.8)
+    ax.set_xlabel('Correlation with Heart Disease', fontsize=11)
+    ax.set_title('Feature Correlation Analysis', fontsize=13, fontweight='bold')
+    for i, (val, name) in enumerate(zip(corr_df.values, corr_df.index)):
+        ax.text(val + 0.01 if val >= 0 else val - 0.01, i, f'{val:.3f}', 
+                va='center', ha='left' if val >= 0 else 'right', fontsize=9)
+    plt.tight_layout()
 
 
 def split_data(X, y, test_size=0.3, random_state=42):
@@ -28,6 +45,7 @@ def train_model(X_train, y_train):
     # This pipeline handles Scaling AND PCA AND XGBoost correctly
     # It will fit ONLY on X_train, preventing leakage
     model_pipeline = Pipeline([
+        ('imputer', SimpleImputer(strategy='median')),
         ('scaler', StandardScaler()),
         ('pca', PCA(n_components=0.95)),
         ('xgb', xgb.XGBRegressor(
