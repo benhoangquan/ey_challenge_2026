@@ -25,3 +25,9 @@ I should use all of them to predict
     - Use **all 7 features** (nir, green, swir16, swir22, NDMI, MNDWI, pet) in preprocessing
     - Gather more training data
     
+## Slurm trick
+- Just don't create venv but install requirement directly. The provide environment is enough and have a lot of package already. If you (venv) pip install or uv pip install, it will create a directory and use up storage, which we doesn't have much to begin with.
+```
+module load python/3.11 # first
+pip install -r requirements.txt
+```

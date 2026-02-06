@@ -10,6 +10,7 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import r2_score, mean_squared_error
 import numpy as np
 import matplotlib.pyplot as plt
+import wandb
 
 
 def combine_two_datasets(*datasets, keys):
@@ -103,11 +104,24 @@ def run_pipeline(X, y, param_name="Parameter", pipeline_kind='full'):
     # Return summary
     results = {
         "Parameter": param_name,
+        "Pipeline": pipeline_kind,
         "R2_Train": r2_train,
         "RMSE_Train": rmse_train,
         "R2_Test": r2_test,
         "RMSE_Test": rmse_test
     }
+
+    # Log to Weights & Biases if a run is active
+    if wandb.run is not None:
+        wandb.log({
+            "param_name": param_name,
+            "pipeline_kind": pipeline_kind,
+            f"{param_name}/R2_Train": r2_train,
+            f"{param_name}/RMSE_Train": rmse_train,
+            f"{param_name}/R2_Test": r2_test,
+            f"{param_name}/RMSE_Test": rmse_test,
+        })
+
     return model, pd.DataFrame([results])
 
 
@@ -150,6 +164,16 @@ def run_pipeline_oof(
         fold_rmse = np.sqrt(mean_squared_error(y_va, oof_preds[va_idx]))
         print(f"  Fold {fold} | R²: {fold_r2:.4f} | RMSE: {fold_rmse:.3f}")
 
+        # Per-fold logging
+        if wandb.run is not None:
+            wandb.log({
+                "param_name": param_name,
+                "pipeline_kind": pipeline_kind,
+                "fold": fold,
+                f"{param_name}/Fold_R2": fold_r2,
+                f"{param_name}/Fold_RMSE": fold_rmse,
+            })
+
     oof_r2 = r2_score(y, oof_preds)
     oof_rmse = np.sqrt(mean_squared_error(y, oof_preds))
     print(f"\n  OOF R²: {oof_r2:.4f} | OOF RMSE: {oof_rmse:.3f}")
@@ -161,4 +185,14 @@ def run_pipeline_oof(
         "R2_OOF": oof_r2,
         "RMSE_OOF": oof_rmse,
     }])
+
+    # Overall OOF metrics logging
+    if wandb.run is not None:
+        wandb.log({
+            "param_name": param_name,
+            "pipeline_kind": pipeline_kind,
+            f"{param_name}/R2_OOF": oof_r2,
+            f"{param_name}/RMSE_OOF": oof_rmse,
+        })
+
     return models, oof_preds, results, test_preds
