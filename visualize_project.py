@@ -43,28 +43,31 @@ def plot_geospatial(df):
 def plot_feature_importance():
     print("Generating feature importance plots...")
     targets = ['Total Alkalinity', 'Electrical Conductance', 'Dissolved Reactive Phosphorus']
-    features = ['swir22', 'NDMI', 'MNDWI', 'pet', "flow_accumulation", "pct_agricultural", "pct_urban"]
-    
+    features = ['swir22', 'NDMI', 'MNDWI', 'pet', 'Latitude', 'Longitude', 'Month']
+
     fig, axes = plt.subplots(1, 3, figsize=(20, 6))
-    
+
     for i, target in enumerate(targets):
         model_path = f'models/best_model_{target.replace(" ", "_")}.joblib'
         if os.path.exists(model_path):
             model = joblib.load(model_path)
-            # Assuming it's a Pipeline with an 'ensemble' step (VotingRegressor)
-            # We'll take the average importance of RF and XGB if possible,
-            # but VotingRegressor doesn't have feature_importances_.
-            # Let's try to get it from the individual models.
-            ensemble = model.named_steps['ensemble']
-            rf_model = ensemble.estimators_[0]
-            xgb_model = ensemble.estimators_[1]
-            
-            importances = (rf_model.feature_importances_ + xgb_model.feature_importances_) / 2
-            
-            sns.barplot(x=importances, y=features, ax=axes[i], palette='magma')
-            axes[i].set_title(f'Feature Importance: {target}')
+            # Try to get rf step
+            if 'rf' in model.named_steps:
+                importances = model.named_steps['rf'].feature_importances_
+            elif 'ensemble' in model.named_steps:
+                ensemble = model.named_steps['ensemble']
+                importances = (ensemble.estimators_[0].feature_importances_ + ensemble.estimators_[1].feature_importances_) / 2
+            else:
+                importances = None
+
+            if importances is not None:
+                sns.barplot(x=importances, y=features, ax=axes[i], palette='magma')
+                axes[i].set_title(f'Feature Importance: {target}')
+            else:
+                axes[i].text(0.5, 0.5, 'Importances not found', ha='center')
         else:
             axes[i].text(0.5, 0.5, 'Model not found', ha='center')
+
             
     plt.tight_layout()
     plt.savefig('visuals/feature_importance.png')
