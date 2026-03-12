@@ -43,10 +43,13 @@ def plot_geospatial(df):
 def plot_feature_importance():
     print("Generating feature importance plots...")
     targets = ['Total Alkalinity', 'Electrical Conductance', 'Dissolved Reactive Phosphorus']
-    features = ['swir22', 'NDMI', 'MNDWI', 'pet', 'Latitude', 'Longitude', 'Month']
+    features = [
+        'swir22', 'NDMI', 'MNDWI', 'pet', 
+        'Latitude', 'Longitude', 'Month', 
+        'flow_accumulation', 'elevation_m', 'swir_green_ratio'
+    ]
 
-    fig, axes = plt.subplots(1, 3, figsize=(20, 6))
-
+    fig, axes = plt.subplots(1, 3, figsize=(20, 8))
     for i, target in enumerate(targets):
         model_path = f'models/best_model_{target.replace(" ", "_")}.joblib'
         if os.path.exists(model_path):
