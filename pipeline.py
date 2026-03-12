@@ -1,16 +1,25 @@
-import pandas as pd
+import os
 from functools import reduce
-from sklearn.preprocessing import StandardScaler
-from sklearn.impute import SimpleImputer
-from sklearn.pipeline import Pipeline
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import wandb
+import xgboost as xgb
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_selection import RFE
-import xgboost as xgb
-from sklearn.model_selection import train_test_split, KFold, learning_curve
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_squared_error
-import numpy as np
-import matplotlib.pyplot as plt
-import wandb
+from sklearn.model_selection import KFold, train_test_split, learning_curve
+from sklearn.pipeline import Pipeline
+
+try:
+    import ee
+except ImportError:  # earthengine-api is optional unless using flow accumulation helpers
+    ee = None
+
+
 
 
 def combine_two_datasets(*datasets, keys):
@@ -347,3 +356,148 @@ def run_pipeline_oof(
         })
 
     return models, oof_preds, results, test_preds
+
+
+# ---------------------------------------------------------------------------
+# Flow accumulation data collection (Google Earth Engine / HydroSHEDS)
+# ---------------------------------------------------------------------------
+
+def _ensure_ee_initialized():
+    """
+    Ensure Google Earth Engine is initialized.
+
+    Users must have run `ee.Authenticate()` at least once on the machine.
+    """
+    if ee is None:
+        raise ImportError(
+            "earthengine-api is required for flow accumulation helpers. "
+            "Install with `pip install earthengine-api`."
+        )
+    try:
+        # Safe to call multiple times; will no-op if already initialized.
+        ee.Initialize()
+    except Exception as exc:
+        raise RuntimeError(
+            "Google Earth Engine is not initialized. "
+            "Run `ee.Authenticate()` once, then `ee.Initialize()` in your session "
+            "before calling flow accumulation helpers."
+        ) from exc
+
+
+def _points_to_feature_collection(locations_df: pd.DataFrame):
+    """Build ee.FeatureCollection from DataFrame with Latitude, Longitude."""
+    features = []
+    for i, row in locations_df.iterrows():
+        lon, lat = float(row["Longitude"]), float(row["Latitude"])
+        pt = ee.Geometry.Point([lon, lat])
+        feat = ee.Feature(pt, {"id": int(i)})
+        features.append(feat)
+    return ee.FeatureCollection(features)
+
+
+def _parse_flow_accumulation_result(result: dict) -> pd.DataFrame:
+    """Parse `sampleRegions().getInfo()` result into a DataFrame."""
+    features = result.get("features", [])
+    rows = []
+    for f in features:
+        props = f.get("properties", {})
+        idx = props.get("id")
+        acc = props.get("b1")  # band name in WWF/HydroSHEDS/15ACC
+        if acc is None:
+            acc = np.nan
+        rows.append({"id": idx, "flow_accumulation": acc})
+    return pd.DataFrame(rows).sort_values("id").reset_index(drop=True)
+
+
+def collect_flow_accumulation_for_locations(
+    locations: pd.DataFrame,
+    scale_m: int = 463,
+) -> pd.DataFrame:
+    """
+    Attach HydroSHEDS flow accumulation to unique locations.
+
+    Parameters
+    ----------
+    locations : DataFrame
+        Must contain `Latitude` and `Longitude` columns.
+    scale_m : int, optional
+        Sampling scale in meters (15 arc-second HydroSHEDS ≈ 463 m).
+
+    Returns
+    -------
+    DataFrame
+        Copy of `locations` with an added `flow_accumulation` column.
+        Duplicate (Latitude, Longitude) pairs share the same value.
+    """
+    _ensure_ee_initialized()
+
+    # Unique coordinate pairs to avoid redundant GEE calls
+    unique_locs = (
+        locations[["Latitude", "Longitude"]]
+        .drop_duplicates()
+        .reset_index(drop=True)
+    )
+
+    points_fc = _points_to_feature_collection(unique_locs)
+
+    flow_acc_image = ee.Image("WWF/HydroSHEDS/15ACC").select("b1")
+    sampled = flow_acc_image.sampleRegions(
+        collection=points_fc,
+        scale=scale_m,
+        geometries=False,
+    )
+
+    result = sampled.getInfo()
+    acc_df = _parse_flow_accumulation_result(result)
+
+    unique_locs_with_acc = unique_locs.copy()
+    unique_locs_with_acc["flow_accumulation"] = acc_df["flow_accumulation"].values
+
+    # Merge back to original locations so duplicates keep their coordinates
+    locations_with_acc = locations.merge(
+        unique_locs_with_acc,
+        on=["Latitude", "Longitude"],
+        how="left",
+    )
+    return locations_with_acc
+
+
+def generate_submission_flow_accumulation(
+    data_root: str = "data",
+    template_filename: str = "submission_template.csv",
+    output_filename: str = "submission_flow_accumulation_locations.csv",
+) -> pd.DataFrame:
+    """
+    Reproduce the notebook flow-accumulation data collection inside the pipeline.
+
+    - Loads `{data_root}/original/{template_filename}`.
+    - Computes HydroSHEDS flow accumulation for unique (Latitude, Longitude) pairs.
+    - Saves unique locations with `flow_accumulation` to
+      `{data_root}/processed/{output_filename}`.
+
+    Returns
+    -------
+    DataFrame
+        The unique locations dataframe with `flow_accumulation` that was saved.
+    """
+    original_dir = os.path.join(data_root, "original")
+    processed_dir = os.path.join(data_root, "processed")
+
+    in_path = os.path.join(original_dir, template_filename)
+    if not os.path.exists(in_path):
+        raise FileNotFoundError(
+            f"Could not find submission template at '{in_path}'. "
+            "Adjust `data_root` or `template_filename`."
+        )
+
+    df = pd.read_csv(in_path)
+    locations = df[["Latitude", "Longitude"]].drop_duplicates().reset_index(drop=True)
+
+    locations_with_acc = collect_flow_accumulation_for_locations(locations)
+
+    os.makedirs(processed_dir, exist_ok=True)
+    out_path = os.path.join(processed_dir, output_filename)
+    locations_with_acc.to_csv(out_path, index=False)
+
+    print(f"Saved {len(locations_with_acc)} rows with flow_accumulation to {out_path}")
+    return locations_with_acc
