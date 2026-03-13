@@ -46,32 +46,30 @@ def plot_feature_importance():
     features = [
         'swir22', 'NDMI', 'MNDWI', 'pet', 
         'Latitude', 'Longitude', 'Month', 
-        'flow_accumulation', 'NDSI', 'NDWI', 'swir_ratio'
+        'flow_accumulation', 'NDSI', 'NDWI', 'swir_ratio',
+        'Lat_Bin', 'Lon_Bin'
     ]
-
-    fig, axes = plt.subplots(1, 3, figsize=(20, 8))
-
+    
+    fig, axes = plt.subplots(1, 3, figsize=(20, 10))
+    
     for i, target in enumerate(targets):
         model_path = f'models/best_model_{target.replace(" ", "_")}.joblib'
         if os.path.exists(model_path):
             model = joblib.load(model_path)
-            # Try to get rf step
+            
+            # The model is a Pipeline
             if 'rf' in model.named_steps:
                 importances = model.named_steps['rf'].feature_importances_
-            elif 'ensemble' in model.named_steps:
-                ensemble = model.named_steps['ensemble']
-                importances = (ensemble.estimators_[0].feature_importances_ + ensemble.estimators_[1].feature_importances_) / 2
             else:
                 importances = None
-
+            
             if importances is not None:
                 sns.barplot(x=importances, y=features, ax=axes[i], palette='magma')
-                axes[i].set_title(f'Feature Importance: {target}')
+                axes[i].set_title(f'Importance: {target}')
             else:
                 axes[i].text(0.5, 0.5, 'Importances not found', ha='center')
         else:
             axes[i].text(0.5, 0.5, 'Model not found', ha='center')
-
             
     plt.tight_layout()
     plt.savefig('visuals/feature_importance.png')

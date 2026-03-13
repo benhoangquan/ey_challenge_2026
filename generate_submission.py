@@ -46,21 +46,32 @@ def preprocess_and_predict(wq_train, wq_test):
     selected_features = [
         'swir22', 'NDMI', 'MNDWI', 'pet', 
         'Latitude', 'Longitude', 'Month', 
-        'flow_accumulation', 'NDSI', 'NDWI', 'swir_ratio'
+        'flow_accumulation', 'NDSI', 'NDWI', 'swir_ratio',
+        'Lat_Bin', 'Lon_Bin'
     ]
     targets = ['Total Alkalinity', 'Electrical Conductance', 'Dissolved Reactive Phosphorus']
     
-    # Preprocess training
-    wq_train['flow_accumulation'] = np.log1p(wq_train['flow_accumulation'])
+    # Preprocess training for bins
     wq_train['Sample Date'] = pd.to_datetime(wq_train['Sample Date'], dayfirst=True)
     wq_train['Month'] = wq_train['Sample Date'].dt.month
+    wq_train['flow_accumulation'] = np.log1p(wq_train['flow_accumulation'])
     wq_train = calculate_indices(wq_train)
     
+    # Calculate bin edges from training
+    lat_bins = pd.qcut(wq_train['Latitude'], q=15, retbins=True, duplicates='drop')[1]
+    lon_bins = pd.qcut(wq_train['Longitude'], q=15, retbins=True, duplicates='drop')[1]
+    
     # Preprocess test
-    wq_test['flow_accumulation'] = np.log1p(wq_test['flow_accumulation'])
     wq_test['Sample Date'] = pd.to_datetime(wq_test['Sample Date'], dayfirst=True)
     wq_test['Month'] = wq_test['Sample Date'].dt.month
+    wq_test['flow_accumulation'] = np.log1p(wq_test['flow_accumulation'])
     wq_test = calculate_indices(wq_test)
+    
+    # Apply bins to test (extending range to avoid NaNs)
+    lat_bins[0] = -np.inf; lat_bins[-1] = np.inf
+    lon_bins[0] = -np.inf; lon_bins[-1] = np.inf
+    wq_test['Lat_Bin'] = pd.cut(wq_test['Latitude'], bins=lat_bins, labels=False, include_lowest=True)
+    wq_test['Lon_Bin'] = pd.cut(wq_test['Longitude'], bins=lon_bins, labels=False, include_lowest=True)
     
     # NaN handling for test (ffill/bfill)
     wq_test = wq_test.sort_values(['Latitude', 'Longitude', 'Sample Date'])

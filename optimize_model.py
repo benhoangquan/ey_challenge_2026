@@ -19,6 +19,11 @@ def calculate_indices(df):
     df['swir_ratio'] = df['swir22'] / (df['swir16'] + 1e-6)
     return df
 
+def add_bins(df):
+    df['Lat_Bin'] = pd.qcut(df['Latitude'], q=15, labels=False, duplicates='drop')
+    df['Lon_Bin'] = pd.qcut(df['Longitude'], q=15, labels=False, duplicates='drop')
+    return df
+
 def load_and_preprocess_data():
     # Load original datasets
     Water_Quality_df = pd.read_csv('./data/original/water_quality_training_dataset.csv')
@@ -35,8 +40,9 @@ def load_and_preprocess_data():
     MERGE_KEYS_COORD = ['Latitude', 'Longitude']
     wq_data = combine_two_datasets(wq_data, flow_data, keys=MERGE_KEYS_COORD)
     
-    # Calculate New Indices
+    # Calculate New Indices and Bins
     wq_data = calculate_indices(wq_data)
+    wq_data = add_bins(wq_data)
     
     # Feature Engineering
     wq_data['Sample Date'] = pd.to_datetime(wq_data['Sample Date'], dayfirst=True)
@@ -48,7 +54,8 @@ def load_and_preprocess_data():
     selected_features = [
         'swir22', 'NDMI', 'MNDWI', 'pet', 
         'Latitude', 'Longitude', 'Month', 
-        'flow_accumulation', 'NDSI', 'NDWI', 'swir_ratio'
+        'flow_accumulation', 'NDSI', 'NDWI', 'swir_ratio',
+        'Lat_Bin', 'Lon_Bin'
     ]
     targets = ['Total Alkalinity', 'Electrical Conductance', 'Dissolved Reactive Phosphorus']
     
@@ -58,37 +65,35 @@ def load_and_preprocess_data():
     return X, Y
 
 def optimize_target(X, y, target_name):
-    print(f"\n--- Optimizing for {target_name} (v4 - RF) ---")
+    print(f"\n--- Optimizing for {target_name} (v4 - Stable RF) ---")
     
     groups = X['location_group']
     X_features = X.drop(columns=['location_group'])
     
     # Define pipeline
-    rf_pipe = Pipeline([
+    model = Pipeline([
         ('imputer', SimpleImputer(strategy='median')),
         ('scaler', StandardScaler()),
         ('rf', RandomForestRegressor(random_state=42))
     ])
     
     # Hyperparameter grid (Standard for RF)
-    rf_params = {
-        'rf__n_estimators': [300],
-        'rf__max_depth': [10, 15, None],
+    param_grid = {
+        'rf__n_estimators': [300, 500],
+        'rf__max_depth': [15, 20, None],
         'rf__min_samples_leaf': [2, 5],
         'rf__max_features': ['sqrt']
     }
     
-    # NO LOG TRANSFORM on target
-    
     cv = GroupKFold(n_splits=5)
     
-    print("Optimizing RandomForest...")
-    rf_search = RandomizedSearchCV(rf_pipe, rf_params, n_iter=5, cv=cv, scoring='r2', n_jobs=-1, random_state=42)
-    rf_search.fit(X_features, y, groups=groups)
+    print("Searching for best configuration...")
+    search = RandomizedSearchCV(model, param_grid, n_iter=5, cv=cv, scoring='r2', n_jobs=-1, random_state=42)
+    search.fit(X_features, y, groups=groups)
     
-    best_model = rf_search.best_estimator_
-    final_score = rf_search.best_score_
-    print(f"Best RF R2 (GroupKFold, No Log): {final_score:.4f}")
+    best_model = search.best_estimator_
+    final_score = search.best_score_
+    print(f"Best RF R2 (GroupKFold, Direct): {final_score:.4f}")
     
     # Refit on all data
     best_model.fit(X_features, y)
@@ -106,7 +111,7 @@ def main():
         score = optimize_target(X, Y[target_col], target_col)
         final_scores[target_col] = score
         
-    print("\n--- Final Summary of Optimized Scores (v4 - RandomForest) ---")
+    print("\n--- Final Summary of Optimized Scores (v4 - Stable RF) ---")
     for target, score in final_scores.items():
         print(f"{target}: {score:.4f}")
 
