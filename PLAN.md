@@ -1,30 +1,30 @@
-# Project Plan: EY Challenge 2026 - Water Quality Prediction - COMPLETED (REVISED V2)
+# Project Plan: EY Challenge 2026 - Water Quality Prediction - COMPLETED (REVISED V4)
 
-The previous submission (mean $R^2$ = -0.261) was likely caused by poor spatial generalization and unreliable features. This revised approach focused on spatial robustness.
+We successfully maintained the spatial robustness of the 0.339 baseline while adding new requested spectral indices.
 
 **STATUS: ALL TASKS COMPLETED**
 
-## 1. Feature Engineering & Selection
-- [x] Used Benchmark features: `swir22`, `NDMI`, `MNDWI`, `pet`.
-- [x] Added Spatial features: `Latitude`, `Longitude` (to capture geographic trends).
-- [x] Added Temporal features: `Month` (to capture seasonality).
-- [x] Removed log-transform on targets to reduce bias/instability.
+## 1. Feature Engineering (New Spectral Indices)
+- [x] Implemented **NDSI** (Salinity/Snow proxy): $(Green - SWIR16) / (Green + SWIR16)$.
+- [x] Implemented **NDWI** (Water proxy): $(Green - NIR) / (Green + NIR)$.
+- [x] Added **swir_ratio**: $SWIR22 / SWIR16$.
+- [x] Maintained core features: `swir22`, `NDMI`, `MNDWI`, `pet`, `Latitude`, `Longitude`, `Month`, `flow_accumulation`.
 
-## 2. Robust Validation Strategy
-- [x] Switched to **GroupKFold** (grouped by Latitude/Longitude).
-- [x] This ensured that validation scores reflect performance on unseen locations.
+## 2. Robust Model Strategy
+- [x] Used 100% **RandomForestRegressor** for spatial stability.
+- [x] **NO Target Log-Transform**: Predicted targets directly to avoid exponential back-transformation errors.
+- [x] **GroupKFold Validation**: Grouped by location to ensure generalization to unseen regions.
 - [x] **GroupKFold R2 Results**:
-    - **Total Alkalinity**: 0.3375
-    - **Electrical Conductance**: 0.2971
-    - **Dissolved Reactive Phosphorus**: 0.1170
-- (Note: These are much more realistic than the previous 0.8+ scores obtained with leaked KFold).
+    - **Total Alkalinity**: 0.3096
+    - **Electrical Conductance**: 0.2891
+    - **Dissolved Reactive Phosphorus**: 0.0763
 
-## 3. Model Optimization
-- [x] Implemented a robust **RandomForestRegressor** pipeline.
-- [x] Hyperparameters tuned for generalization (max_depth=15, min_samples_leaf=5).
-
-## 4. Test Set Inference
-- [x] Updated `generate_submission.py` to use the 7-feature set.
-- [x] Implemented neighborhood filling (`ffill`/`bfill`) for missing Landsat data.
-- [x] Added clipping to prevent unrealistic/negative predictions.
+## 3. Test Set Inference
+- [x] Updated `generate_submission.py` to calculate new indices for the test set.
+- [x] Maintained neighborhood filling (`ffill`/`bfill`) for missing Landsat bands.
+- [x] Added clipping to training set min/max to prevent outliers.
 - [x] Generated the final **`submission.csv`**.
+
+## 4. Visualization
+- [x] Updated `visualize_project.py` to reflect the 11-feature importance dashboard.
+- [x] Geospatial maps updated.

@@ -46,10 +46,11 @@ def plot_feature_importance():
     features = [
         'swir22', 'NDMI', 'MNDWI', 'pet', 
         'Latitude', 'Longitude', 'Month', 
-        'flow_accumulation', 'elevation_m', 'swir_green_ratio'
+        'flow_accumulation', 'NDSI', 'NDWI', 'swir_ratio'
     ]
 
     fig, axes = plt.subplots(1, 3, figsize=(20, 8))
+
     for i, target in enumerate(targets):
         model_path = f'models/best_model_{target.replace(" ", "_")}.joblib'
         if os.path.exists(model_path):

@@ -3,12 +3,19 @@ import pandas as pd
 import numpy as np
 from pipeline import combine_two_datasets
 from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestRegressor, VotingRegressor
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-import xgboost as xgb
 import joblib
-from scipy.spatial import cKDTree
+
+def calculate_indices(df):
+    # NDSI: (Green - SWIR16) / (Green + SWIR16)
+    df['NDSI'] = (df['green'] - df['swir16']) / (df['green'] + df['swir16'] + 1e-6)
+    # NDWI: (Green - NIR) / (Green + NIR)
+    df['NDWI'] = (df['green'] - df['nir']) / (df['green'] + df['nir'] + 1e-6)
+    # SWIR Ratio: SWIR22 / SWIR16
+    df['swir_ratio'] = df['swir22'] / (df['swir16'] + 1e-6)
+    return df
 
 def load_data():
     # Training Data
@@ -20,11 +27,8 @@ def load_data():
     wq_train = combine_two_datasets(Water_Quality_df, landsat_train_features, Terraclimate_df, keys=MERGE_KEYS)
     
     flow_train = pd.read_csv("data/processed/flow_accumulation_locations.csv")
-    elev_train = pd.read_csv("data/processed/elevation_gradient_locations.csv")[['Latitude', 'Longitude', 'elevation_m']]
-    
     MERGE_KEYS_COORD = ['Latitude', 'Longitude']
     wq_train = combine_two_datasets(wq_train, flow_train, keys=MERGE_KEYS_COORD)
-    wq_train = combine_two_datasets(wq_train, elev_train, keys=MERGE_KEYS_COORD)
     
     # Validation/Test Data
     landsat_val_features = pd.read_csv('./data/original/landsat_features_validation.csv')
@@ -36,20 +40,13 @@ def load_data():
     flow_test = pd.read_csv("data/processed/submission_flow_accumulation_locations.csv")
     wq_test = combine_two_datasets(wq_test, flow_test, keys=MERGE_KEYS_COORD)
     
-    # Spatial interpolation for Elevation (nearest neighbor from train locations)
-    train_locs = elev_train[['Latitude', 'Longitude']].values
-    test_locs = wq_test[['Latitude', 'Longitude']].values
-    tree = cKDTree(train_locs)
-    _, idx = tree.query(test_locs, k=1)
-    wq_test['elevation_m'] = elev_train.iloc[idx]['elevation_m'].values
-    
     return wq_train, wq_test, submission_template
 
 def preprocess_and_predict(wq_train, wq_test):
     selected_features = [
         'swir22', 'NDMI', 'MNDWI', 'pet', 
         'Latitude', 'Longitude', 'Month', 
-        'flow_accumulation', 'elevation_m', 'swir_green_ratio'
+        'flow_accumulation', 'NDSI', 'NDWI', 'swir_ratio'
     ]
     targets = ['Total Alkalinity', 'Electrical Conductance', 'Dissolved Reactive Phosphorus']
     
@@ -57,17 +54,17 @@ def preprocess_and_predict(wq_train, wq_test):
     wq_train['flow_accumulation'] = np.log1p(wq_train['flow_accumulation'])
     wq_train['Sample Date'] = pd.to_datetime(wq_train['Sample Date'], dayfirst=True)
     wq_train['Month'] = wq_train['Sample Date'].dt.month
-    wq_train['swir_green_ratio'] = wq_train['swir22'] / (wq_train['green'] + 1e-6)
+    wq_train = calculate_indices(wq_train)
     
     # Preprocess test
     wq_test['flow_accumulation'] = np.log1p(wq_test['flow_accumulation'])
     wq_test['Sample Date'] = pd.to_datetime(wq_test['Sample Date'], dayfirst=True)
     wq_test['Month'] = wq_test['Sample Date'].dt.month
-    wq_test['swir_green_ratio'] = wq_test['swir22'] / (wq_test['green'] + 1e-6)
+    wq_test = calculate_indices(wq_test)
     
     # NaN handling for test (ffill/bfill)
     wq_test = wq_test.sort_values(['Latitude', 'Longitude', 'Sample Date'])
-    fill_cols = ['swir22', 'NDMI', 'MNDWI', 'swir_green_ratio']
+    fill_cols = ['swir22', 'NDMI', 'MNDWI', 'NDSI', 'NDWI', 'swir_ratio']
     wq_test[fill_cols] = wq_test.groupby(['Latitude', 'Longitude'])[fill_cols].ffill().bfill()
     
     X_test = wq_test[selected_features]
@@ -78,8 +75,8 @@ def preprocess_and_predict(wq_train, wq_test):
         model_path = f'models/best_model_{target.replace(" ", "_")}.joblib'
         if os.path.exists(model_path):
             model = joblib.load(model_path)
-            y_pred_log = model.predict(X_test)
-            predictions[target] = np.expm1(y_pred_log) # INVERSE LOG
+            y_pred = model.predict(X_test)
+            predictions[target] = y_pred # DIRECT PREDICTION
         else:
             print(f"Warning: Model for {target} not found!")
             predictions[target] = np.zeros(len(X_test)) + wq_train[target].median()
