@@ -2,7 +2,7 @@
 
 Predicts three water-quality measures at South African sampling sites from Landsat bands, TerraClimate, elevation and flow accumulation: total alkalinity, electrical conductance and dissolved reactive phosphorus.
 
-![Run of optimize_model.py and the prediction map](docs/demo.gif)
+<!-- demo: add docs/demo.gif and an image link here once the recording exists -->
 
 ## Architecture
 
