@@ -1,6 +1,6 @@
 # Project Plan: EY Challenge 2026 - Water Quality Prediction - COMPLETED (REVISED V4)
 
-We successfully maintained the spatial robustness of the 0.339 baseline while adding new requested spectral indices.
+Revision 4 adds three spectral indices and latitude/longitude bins to the location-grouped random forest.
 
 **STATUS: ALL TASKS COMPLETED**
 
@@ -15,9 +15,9 @@ We successfully maintained the spatial robustness of the 0.339 baseline while ad
 - [x] **NO Target Log-Transform**: Predicted targets directly to avoid exponential back-transformation errors.
 - [x] **GroupKFold Validation**: Grouped by location to ensure generalization to unseen regions.
 - [x] **GroupKFold R2 Results**:
-    - **Total Alkalinity**: 0.3096
-    - **Electrical Conductance**: 0.2891
-    - **Dissolved Reactive Phosphorus**: 0.0763
+    - **Total Alkalinity**: 0.2527
+    - **Electrical Conductance**: 0.3636
+    - **Dissolved Reactive Phosphorus**: 0.0987
 
 ## 3. Test Set Inference
 - [x] Updated `generate_submission.py` to calculate new indices for the test set.
@@ -26,5 +26,5 @@ We successfully maintained the spatial robustness of the 0.339 baseline while ad
 - [x] Generated the final **`submission.csv`**.
 
 ## 4. Visualization
-- [x] Updated `visualize_project.py` to reflect the 11-feature importance dashboard.
+- [x] Updated `visualize_project.py` to reflect the feature importance dashboard.
 - [x] Geospatial maps updated.

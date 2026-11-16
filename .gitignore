@@ -10,3 +10,7 @@
 .env.test
 .env.production
 __pycache__/
+.DS_Store
+models/
+wandb/
+__pycache__/
